@@ -13,6 +13,21 @@
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
+        
+        /* Efeitos visuais de alerta baseados na data de vencimento */
+        @keyframes piscarAlerta {
+            0% { border-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
+            70% { border-color: #ef4444; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
+            100% { border-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+        }
+        .alerta-vencido {
+            animation: piscarAlerta 1.5s infinite;
+            border-width: 2px !important;
+        }
+        .alerta-proximo {
+            border-color: #f59e0b !important; /* Amarelo/Laranja para vencendo em breve */
+            border-width: 2px !important;
+        }
     </style>
 </head>
 <body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col justify-between">
@@ -61,20 +76,15 @@
             <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
                 <h2 class="text-lg font-semibold text-gray-700 mb-4">Adicionar Nova Dívida / Gasto</h2>
                 <form id="formDivida" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-                    <div class="md:col-span-4">
+                    <div class="md:col-span-5">
                         <label class="block text-xs font-medium text-gray-600 mb-1">Nome da Dívida</label>
-                        <input type="text" id="nome" required placeholder="Ex: Cartão, Aluguel..." 
+                        <input type="text" id="nome" required placeholder="Ex: Cartão, Empréstimo..." 
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
                     </div>
                     <div class="md:col-span-3">
                         <label class="block text-xs font-medium text-gray-600 mb-1">Valor Total (R$)</label>
                         <input type="number" step="0.01" id="valor" required placeholder="0.00" 
                             class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
-                    </div>
-                    <div class="md:col-span-3">
-                        <label class="block text-xs font-medium text-gray-600 mb-1">Mês de Referência</label>
-                        <input type="month" id="mesReferencia" required 
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
                     </div>
                     <div class="md:col-span-2">
                         <label class="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
@@ -84,10 +94,10 @@
                             <option value="parcelado">Parcelado</option>
                         </select>
                     </div>
-                    <div class="md:col-span-12 hidden" id="divParcelas">
+                    <div class="md:col-span-2 hidden" id="divParcelas">
                         <label class="block text-xs font-medium text-gray-600 mb-1">Nº de Vezes</label>
                         <input type="number" id="parcelas" min="2" max="99" value="2" 
-                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:w-1/4">
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
                     </div>
                     <div class="md:col-span-12 flex justify-end mt-2">
                         <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2 rounded-lg text-sm transition-colors w-full md:w-auto">
@@ -110,7 +120,6 @@
                             <option value="pendente">Pendentes</option>
                             <option value="emdia">Em dia (Pagos)</option>
                         </select>
-                        <input type="month" id="filtroMes" onchange="renderizar()" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                         <button onclick="limparFiltros()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1">Limpar Filtros</button>
                     </div>
                 </div>
@@ -148,11 +157,6 @@
         let gisInited = false;
         let dividas = [];
         let spreadsheetId = '1WY93hZvOOK4qjlt_r_E4ef6TXqhL-zMA436rnZONe8M';
-
-        document.addEventListener('DOMContentLoaded', () => {
-            const dataAtual = new Date().toISOString().slice(0, 7);
-            document.getElementById('mesReferencia').value = dataAtual;
-        });
 
         function gapiLoaded() {
             gapi.load('client', initializeGapiClient);
@@ -249,9 +253,9 @@
                     range: 'Página1!A1:E1000'
                 });
 
-                let rows = [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']];
+                let rows = [['ID', 'Nome', 'ValorTotal', 'Tipo', 'DadosJSON']];
                 dividas.forEach(d => {
-                    rows.push([d.id, d.nome, d.valorTotal, d.mesReferencia, JSON.stringify(d)]);
+                    rows.push([d.id, d.nome, d.valorTotal, d.tipo, JSON.stringify(d)]);
                 });
 
                 await gapi.client.sheets.spreadsheets.values.update({
@@ -281,23 +285,26 @@
             e.preventDefault();
             const nome = document.getElementById('nome').value;
             const valorTotal = parseFloat(document.getElementById('valor').value);
-            const mesReferencia = document.getElementById('mesReferencia').value;
             const tipo = document.getElementById('tipo').value;
             const qtdParcelas = tipo === 'parcelado' ? parseInt(document.getElementById('parcelas').value) : 1;
             const valorParcela = valorTotal / qtdParcelas;
             
             let listaDeParcelas = [];
             for (let i = 1; i <= qtdParcelas; i++) {
-                listaDeParcelas.push({ numero: i, valor: valorParcela, pago: false });
+                listaDeParcelas.push({ 
+                    numero: i, 
+                    valor: valorParcela, 
+                    vencimento: '', // Vencimento começa vazio e será preenchido dinamicamente 
+                    pago: false 
+                });
             }
 
-            const novaDivida = { id: Date.now(), nome, valorTotal, mesReferencia, tipo, parcelas: listaDeParcelas };
+            const novaDivida = { id: Date.now(), nome, valorTotal, tipo, parcelas: listaDeParcelas };
             dividas.push(novaDivida);
             
             await salvarNaPlanilha();
             renderizar();
             this.reset();
-            document.getElementById('mesReferencia').value = new Date().toISOString().slice(0, 7);
             toggleParcelas();
         });
 
@@ -308,15 +315,53 @@
             const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
             if (!parcela) return;
 
-            const acao = parcela.pago ? "marcar como PENDENTE" : "marcar como PAGO";
-            const confirmacao = confirm(`Deseja realmente ${acao} a ${parcela.numero}ª parcela de "${divida.nome}"?`);
+            if (!parcela.pago) {
+                // Vai marcar como PAGO: Pergunta a data de vencimento da próxima parcela, se houver
+                const proximaParcela = divida.parcelas.find(p => p.numero === parcelaNum + 1 && !p.pago);
+                
+                if (proximaParcela) {
+                    let dataInformada = prompt(`Parcela ${parcelaNum} paga!\n\nDigite a data de vencimento da próxima (${proximaParcela.numero}ª parcela) no formato AAAA-MM-DD ou DD/MM/AAAA:`, '');
+                    if (dataInformada) {
+                        // Tenta converter formato DD/MM/AAAA para AAAA-MM-DD se necessário
+                        let dataFormatada = dataInformada.trim();
+                        if (dataFormatada.includes('/')) {
+                            const partes = dataFormatada.split('/');
+                            if (partes.length === 3) {
+                                dataFormatada = `${partes[2]}-${partes[1]}-${partes[0]}`;
+                            }
+                        }
+                        proximaParcela.vencimento = dataFormatada;
+                    }
+                }
+                parcela.pago = true;
+            } else {
+                // Desmarcar pagamento
+                const confirmacao = confirm(`Deseja desfazer o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
+                if (confirmacao) {
+                    parcela.pago = false;
+                } else {
+                    event.target.checked = true;
+                    return;
+                }
+            }
 
-            if (confirmacao) {
-                parcela.pago = !parcela.pago;
+            await salvarNaPlanilha();
+            renderizar();
+        }
+
+        // Permite alterar manualmente o vencimento de qualquer parcela caso o usuário queira corrigir
+        async function alterarVencimentoManual(dividaId, parcelaNum) {
+            const divida = dividas.find(d => d.id === dividaId);
+            if (!divida) return;
+            const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
+            if (!parcela) return;
+
+            let atual = parcela.vencimento || '';
+            let novaData = prompt(`Informe a data de vencimento para a ${parcela.numero}ª parcela (AAAA-MM-DD):`, atual);
+            if (novaData !== null) {
+                parcela.vencimento = novaData.trim();
                 await salvarNaPlanilha();
                 renderizar();
-            } else {
-                event.target.checked = parcela.pago;
             }
         }
 
@@ -344,15 +389,37 @@
         function limparFiltros() {
             document.getElementById('filtroNome').value = '';
             document.getElementById('filtroStatus').value = 'todos';
-            document.getElementById('filtroMes').value = '';
             renderizar();
         }
 
-        function formatarMesAno(anoMes) {
-            if (!anoMes) return '';
-            const [ano, mes] = anoMes.split('-');
-            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-            return `${meses[parseInt(mes) - 1]} de ${ano}`;
+        function formatarData(dataStr) {
+            if (!dataStr) return 'Não definida';
+            const partes = dataStr.split('-');
+            if (partes.length !== 3) return dataStr;
+            return `${partes[2]}/${partes[1]}/${partes[0]}`;
+        }
+
+        // Analisa a situação da próxima parcela pendente para definir o alerta visual
+        function avaliarStatusAlerta(divida) {
+            const proxima = divida.parcelas.find(p => !p.pago);
+            if (!proxima || !proxima.vencimento) return { status: 'normal', texto: 'Em dia / Sem vencimento' };
+
+            const hoje = new Date();
+            hoje.setHours(0, 0, 0, 0);
+
+            const [ano, mes, dia] = proxima.vencimento.split('-').map(Number);
+            const dataVenc = new Date(ano, mes - 1, dia);
+
+            // Diferença em dias
+            const diffDias = Math.ceil((dataVenc - hoje) / (1000 * 60 * 60 * 24));
+
+            if (diffDias < 0) {
+                return { status: 'vencido', texto: `⚠️ Vencido há ${Math.abs(diffDias)} dia(s) (${formatarData(proxima.vencimento)})` };
+            } else if (diffDias <= 3) {
+                return { status: 'proximo', texto: `⚠️ Vence em ${diffDias === 0 ? 'hoje' : diffDias + ' dia(s)'} (${formatarData(proxima.vencimento)})` };
+            } else {
+                return { status: 'normal', texto: `Próxima: ${proxima.numero}ª em ${formatarData(proxima.vencimento)}` };
+            }
         }
 
         function renderizar() {
@@ -361,14 +428,8 @@
 
             const filtroNome = document.getElementById('filtroNome').value.toLowerCase().trim();
             const filtroStatus = document.getElementById('filtroStatus').value;
-            const filtroMes = document.getElementById('filtroMes').value;
 
-            let dividasDoMes = dividas;
-            if (filtroMes) {
-                dividasDoMes = dividas.filter(divida => divida.mesReferencia === filtroMes);
-            }
-
-            let dividasFiltradas = dividasDoMes.filter(divida => {
+            let dividasFiltradas = dividas.filter(divida => {
                 const matchNome = divida.nome.toLowerCase().includes(filtroNome);
                 if (!matchNome) return false;
 
@@ -379,7 +440,7 @@
             });
 
             document.getElementById('contadorResultados').innerText = `Mostrando ${dividasFiltradas.length} de ${dividas.length} registros`;
-            calcularResumo(dividasDoMes, filtroMes);
+            calcularResumo(dividas);
 
             if (dividas.length === 0) {
                 container.innerHTML = `<p class="text-gray-400 text-center py-6 text-sm">Nenhum gasto cadastrado no momento.</p>`;
@@ -395,39 +456,59 @@
                 const todasPagas = divida.parcelas.every(p => p.pago);
                 const parcelasPagasCount = divida.parcelas.filter(p => p.pago).length;
                 const valorParcelaUnitaria = divida.parcelas.length > 0 ? divida.parcelas[0].valor : divida.valorTotal;
-                
-                const itemHtml = document.createElement('div');
-                itemHtml.className = `p-4 rounded-xl border transition-all ${todasPagas ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-200'}`;
+
+                const alerta = avaliarStatusAlerta(divida);
+
+                let classeCard = 'bg-white border-gray-200';
+                let seloHtml = '';
+
+                if (todasPagas) {
+                    classeCard = 'bg-emerald-50/40 border-emerald-200';
+                    seloHtml = '<span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-emerald-100 text-emerald-700">Quitado</span>';
+                } else if (alerta.status === 'vencido') {
+                    classeCard = 'alerta-vencido bg-red-50/20';
+                    seloHtml = '<span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-red-100 text-red-700 animate-pulse">Vencido!</span>';
+                } else if (alerta.status === 'proximo') {
+                    classeCard = 'alerta-proximo bg-amber-50/20';
+                    seloHtml = '<span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-amber-100 text-amber-700">Vence logo</span>';
+                } else {
+                    seloHtml = '<span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full bg-indigo-100 text-indigo-700">Pendente</span>';
+                }
 
                 let parcelasHtml = '';
                 divida.parcelas.forEach(p => {
                     parcelasHtml += `
-                        <label class="flex items-center space-x-2 text-xs bg-white hover:bg-gray-50 p-2 rounded border border-gray-100 cursor-pointer transition-colors shadow-sm">
-                            <input type="checkbox" ${p.pago ? 'checked' : ''} onclick="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
-                            <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
-                            <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
-                            <span class="ml-auto font-semibold ${p.pago ? 'text-emerald-600' : 'text-amber-600'}">${p.pago ? 'Pago' : 'Pendente'}</span>
-                        </label>
+                        <div class="flex items-center justify-between text-xs bg-white hover:bg-gray-50 p-2 rounded border border-gray-100 transition-colors shadow-sm">
+                            <label class="flex items-center space-x-2 cursor-pointer">
+                                <input type="checkbox" ${p.pago ? 'checked' : ''} onclick="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+                                <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
+                                <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
+                            </label>
+                            <div class="flex items-center gap-2">
+                                <span class="text-[10px] text-gray-400" onclick="alterarVencimentoManual(${divida.id}, ${p.numero})" title="Clique para alterar vencimento">
+                                    📅 ${formatarData(p.vencimento)}
+                                </span>
+                                <span class="font-semibold ${p.pago ? 'text-emerald-600' : 'text-amber-600'}">${p.pago ? 'Pago' : 'Pendente'}</span>
+                            </div>
+                        </div>
                     `;
                 });
 
                 const nomeSeguro = divida.nome.replace(/'/g, "\\'");
+
+                const itemHtml = document.createElement('div');
+                itemHtml.className = `p-4 rounded-xl border transition-all ${classeCard}`;
 
                 itemHtml.innerHTML = `
                     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
                         <div class="w-full">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <h3 class="font-semibold text-gray-800">${divida.nome}</h3>
-                                <span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full ${todasPagas ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
-                                    ${todasPagas ? 'Em dia' : 'Pendente'}
-                                </span>
-                                <span class="px-2 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
-                                    📅 ${formatarMesAno(divida.mesReferencia)}
-                                </span>
+                                ${seloHtml}
                             </div>
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-1">
                                 <p class="text-xs text-gray-500">
-                                    ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x (${parcelasPagasCount}/${divida.parcelas.length} pagas) • Valor da Parcela: <span class="font-medium text-indigo-600">R$ ${valorParcelaUnitaria.toFixed(2)}</span>`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
+                                    ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x (${parcelasPagasCount}/${divida.parcelas.length} pagas) • Parcela: <span class="font-medium text-indigo-600">R$ ${valorParcelaUnitaria.toFixed(2)}</span> • <span class="font-medium text-gray-700">${alerta.texto}</span>`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
                                 </p>
                                 <div class="flex items-center gap-3">
                                     ${divida.tipo === 'parcelado' ? `
@@ -443,7 +524,7 @@
                     
                     <!-- Painel Retrátil de Parcelas -->
                     <div id="painel-parcelas-${divida.id}" class="hidden mt-3 pt-3 border-t border-gray-100">
-                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                        <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
                             ${parcelasHtml}
                         </div>
                     </div>
@@ -452,7 +533,7 @@
             });
         }
 
-        function calcularResumo(listaDeDividas, mesFiltrado) {
+        function calcularResumo(listaDeDividas) {
             let geralTotal = 0, geralPago = 0, geralPendente = 0;
             listaDeDividas.forEach(divida => {
                 geralTotal += divida.valorTotal;
@@ -461,11 +542,6 @@
                 geralPago += valorPagoDivida;
                 geralPendente += valorPendenteDivida;
             });
-
-            const labelMes = mesFiltrado ? ` (${formatarMesAno(mesFiltrado)})` : ' Geral';
-            document.getElementById('labelTotalGeral').innerText = `Total${labelMes}`;
-            document.getElementById('labelTotalPendente').innerText = `Total Pendente${labelMes}`;
-            document.getElementById('labelTotalPago').innerText = `Total Pago${labelMes}`;
 
             document.getElementById('totalGeral').innerText = `R$ ${geralTotal.toFixed(2)}`;
             document.getElementById('totalPendente').innerText = `R$ ${geralPendente.toFixed(2)}`;
