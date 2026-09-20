@@ -14,7 +14,6 @@
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
         body { font-family: 'Inter', sans-serif; }
         
-        /* Efeitos visuais de alerta baseados na data de vencimento */
         @keyframes piscarAlerta {
             0% { border-color: #ef4444; box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.4); }
             70% { border-color: #ef4444; box-shadow: 0 0 0 6px rgba(239, 68, 68, 0); }
@@ -25,7 +24,7 @@
             border-width: 2px !important;
         }
         .alerta-proximo {
-            border-color: #f59e0b !important; /* Amarelo/Laranja para vencendo em breve */
+            border-color: #f59e0b !important;
             border-width: 2px !important;
         }
     </style>
@@ -134,6 +133,19 @@
         </div>
     </div>
 
+    <!-- Modal Personalizado com Calendário para Escolha de Vencimento -->
+    <div id="modalCalendario" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+        <div class="bg-white rounded-2xl max-w-sm w-full p-6 shadow-xl border border-gray-100">
+            <h3 class="text-base font-semibold text-gray-800 mb-2" id="modalTitulo">Vencimento da Próxima Parcela</h3>
+            <p class="text-xs text-gray-500 mb-4" id="modalSubtitulo">Selecione abaixo a data de vencimento usando o calendário:</p>
+            <input type="date" id="inputDataCalendario" class="w-full px-3 py-2.5 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm mb-6 bg-white">
+            <div class="flex justify-end gap-3">
+                <button onclick="fecharModalData(false)" class="px-4 py-2 text-xs font-medium text-gray-600 hover:text-gray-800 bg-gray-100 rounded-lg transition-colors">Pular / Sem Data</button>
+                <button onclick="fecharModalData(true)" class="px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition-colors">Confirmar Data</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Rodapé -->
     <footer class="text-center py-6 text-xs text-gray-500 border-t border-gray-200 mt-8 bg-white">
         <p>Desenvolvido por <span class="font-semibold text-gray-700">WM SecureSystems - Williams Macedo</span></p>
@@ -157,6 +169,8 @@
         let gisInited = false;
         let dividas = [];
         let spreadsheetId = '1WY93hZvOOK4qjlt_r_E4ef6TXqhL-zMA436rnZONe8M';
+        
+        let resolveModalCallback = null;
 
         function gapiLoaded() {
             gapi.load('client', initializeGapiClient);
@@ -281,6 +295,27 @@
             else divParcelas.classList.add('hidden');
         }
 
+        // Abre o modal de calendário e retorna uma Promise com a data escolhida
+        function abrirModalCalendario(titulo, subtitulo) {
+            return new Promise((resolve) => {
+                document.getElementById('modalTitulo').innerText = titulo;
+                document.getElementById('modalSubtitulo').innerText = subtitulo;
+                document.getElementById('inputDataCalendario').value = '';
+                document.getElementById('modalCalendario').classList.remove('hidden');
+                resolveModalCallback = resolve;
+            });
+        }
+
+        function fecharModalData(confirmado) {
+            const modal = document.getElementById('modalCalendario');
+            modal.classList.add('hidden');
+            const dataVal = document.getElementById('inputDataCalendario').value;
+            if (resolveModalCallback) {
+                resolveModalCallback(confirmado ? dataVal : null);
+                resolveModalCallback = null;
+            }
+        }
+
         document.getElementById('formDivida').addEventListener('submit', async function(e) {
             e.preventDefault();
             const nome = document.getElementById('nome').value;
@@ -294,7 +329,7 @@
                 listaDeParcelas.push({ 
                     numero: i, 
                     valor: valorParcela, 
-                    vencimento: '', // Vencimento começa vazio e será preenchido dinamicamente 
+                    vencimento: '', 
                     pago: false 
                 });
             }
@@ -315,33 +350,32 @@
             const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
             if (!parcela) return;
 
-            if (!parcela.pago) {
-                // Vai marcar como PAGO: Pergunta a data de vencimento da próxima parcela, se houver
-                const proximaParcela = divida.parcelas.find(p => p.numero === parcelaNum + 1 && !p.pago);
-                
-                if (proximaParcela) {
-                    let dataInformada = prompt(`Parcela ${parcelaNum} paga!\n\nDigite a data de vencimento da próxima (${proximaParcela.numero}ª parcela) no formato AAAA-MM-DD ou DD/MM/AAAA:`, '');
-                    if (dataInformada) {
-                        // Tenta converter formato DD/MM/AAAA para AAAA-MM-DD se necessário
-                        let dataFormatada = dataInformada.trim();
-                        if (dataFormatada.includes('/')) {
-                            const partes = dataFormatada.split('/');
-                            if (partes.length === 3) {
-                                dataFormatada = `${partes[2]}-${partes[1]}-${partes[0]}`;
-                            }
-                        }
-                        proximaParcela.vencimento = dataFormatada;
-                    }
-                }
-                parcela.pago = true;
+            // Se for à vista ou se for desmarcar pagamento
+            if (divida.tipo === 'avista') {
+                parcela.pago = event.target.checked;
             } else {
-                // Desmarcar pagamento
-                const confirmacao = confirm(`Deseja desfazer o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
-                if (confirmacao) {
-                    parcela.pago = false;
+                if (!parcela.pago) {
+                    // Vai marcar como PAGO: Pergunta a data de vencimento da próxima parcela pelo Calendário
+                    const proximaParcela = divida.parcelas.find(p => p.numero === parcelaNum + 1 && !p.pago);
+                    
+                    if (proximaParcela) {
+                        const dataEscolhida = await abrirModalCalendario(
+                            `Parcela ${parcelaNum} paga!`, 
+                            `Selecione a data de vencimento da próxima (${proximaParcela.numero}ª parcela):`
+                        );
+                        if (dataEscolhida) {
+                            proximaParcela.vencimento = dataEscolhida;
+                        }
+                    }
+                    parcela.pago = true;
                 } else {
-                    event.target.checked = true;
-                    return;
+                    const confirmacao = confirm(`Deseja desfazer o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
+                    if (confirmacao) {
+                        parcela.pago = false;
+                    } else {
+                        event.target.checked = true;
+                        return;
+                    }
                 }
             }
 
@@ -349,17 +383,18 @@
             renderizar();
         }
 
-        // Permite alterar manualmente o vencimento de qualquer parcela caso o usuário queira corrigir
         async function alterarVencimentoManual(dividaId, parcelaNum) {
             const divida = dividas.find(d => d.id === dividaId);
             if (!divida) return;
             const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
             if (!parcela) return;
 
-            let atual = parcela.vencimento || '';
-            let novaData = prompt(`Informe a data de vencimento para a ${parcela.numero}ª parcela (AAAA-MM-DD):`, atual);
-            if (novaData !== null) {
-                parcela.vencimento = novaData.trim();
+            const dataEscolhida = await abrirModalCalendario(
+                `Alterar vencimento da ${parcela.numero}ª parcela`,
+                `Escolha a nova data para "${divida.nome}":`
+            );
+            if (dataEscolhida !== null) {
+                parcela.vencimento = dataEscolhida;
                 await salvarNaPlanilha();
                 renderizar();
             }
@@ -399,7 +434,6 @@
             return `${partes[2]}/${partes[1]}/${partes[0]}`;
         }
 
-        // Analisa a situação da próxima parcela pendente para definir o alerta visual
         function avaliarStatusAlerta(divida) {
             const proxima = divida.parcelas.find(p => !p.pago);
             if (!proxima || !proxima.vencimento) return { status: 'normal', texto: 'Em dia / Sem vencimento' };
@@ -410,7 +444,6 @@
             const [ano, mes, dia] = proxima.vencimento.split('-').map(Number);
             const dataVenc = new Date(ano, mes - 1, dia);
 
-            // Diferença em dias
             const diffDias = Math.ceil((dataVenc - hoje) / (1000 * 60 * 60 * 24));
 
             if (diffDias < 0) {
@@ -480,14 +513,16 @@
                     parcelasHtml += `
                         <div class="flex items-center justify-between text-xs bg-white hover:bg-gray-50 p-2 rounded border border-gray-100 transition-colors shadow-sm">
                             <label class="flex items-center space-x-2 cursor-pointer">
-                                <input type="checkbox" ${p.pago ? 'checked' : ''} onclick="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
-                                <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
+                                <input type="checkbox" ${p.pago ? 'checked' : ''} onchange="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+                                <span class="font-medium text-gray-700">${divida.tipo === 'avista' ? 'Pagamento Único' : p.numero + 'ª Parcela'}</span>
                                 <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
                             </label>
                             <div class="flex items-center gap-2">
-                                <span class="text-[10px] text-gray-400" onclick="alterarVencimentoManual(${divida.id}, ${p.numero})" title="Clique para alterar vencimento">
-                                    📅 ${formatarData(p.vencimento)}
-                                </span>
+                                ${divida.tipo === 'parcelado' ? `
+                                    <span class="text-[10px] text-gray-400 cursor-pointer hover:text-indigo-600" onclick="alterarVencimentoManual(${divida.id},${p.numero})" title="Clique para alterar vencimento">
+                                        📅 ${formatarData(p.vencimento)}
+                                    </span>
+                                ` : ''}
                                 <span class="font-semibold ${p.pago ? 'text-emerald-600' : 'text-amber-600'}">${p.pago ? 'Pago' : 'Pendente'}</span>
                             </div>
                         </div>
@@ -523,7 +558,7 @@
                     </div>
                     
                     <!-- Painel Retrátil de Parcelas -->
-                    <div id="painel-parcelas-${divida.id}" class="hidden mt-3 pt-3 border-t border-gray-100">
+                    <div id="painel-parcelas-${divida.id}" class="${divida.tipo === 'avista' ? '' : 'hidden'} mt-3 pt-3 border-t border-gray-100">
                         <div class="space-y-2 max-h-56 overflow-y-auto pr-1">
                             ${parcelasHtml}
                         </div>
