@@ -316,7 +316,6 @@
                 await salvarNaPlanilha();
                 renderizar();
             } else {
-                // Reverte visualmente o checkbox caso o usuário cancele
                 event.target.checked = parcela.pago;
             }
         }
@@ -326,6 +325,20 @@
                 dividas = dividas.filter(d => d.id !== id);
                 await salvarNaPlanilha();
                 renderizar();
+            }
+        }
+
+        // Função para abrir/fechar o painel de parcelas de forma limpa
+        function togglePainelParcelas(dividaId) {
+            const painel = document.getElementById(`painel-parcelas-${dividaId}`);
+            const icone = document.getElementById(`icone-seta-${dividaId}`);
+            if (painel) {
+                painel.classList.toggle('hidden');
+                if (painel.classList.contains('hidden')) {
+                    icone.innerText = '▼ Ver parcelas';
+                } else {
+                    icone.innerText = '▲ Ocultar parcelas';
+                }
             }
         }
 
@@ -381,13 +394,14 @@
 
             dividasFiltradas.forEach(divida => {
                 const todasPagas = divida.parcelas.every(p => p.pago);
+                const parcelasPagasCount = divida.parcelas.filter(p => p.pago).length;
                 const itemHtml = document.createElement('div');
                 itemHtml.className = `p-4 rounded-xl border transition-all ${todasPagas ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-200'}`;
 
                 let parcelasHtml = '';
                 divida.parcelas.forEach(p => {
                     parcelasHtml += `
-                        <label class="flex items-center space-x-2 text-xs bg-gray-50 hover:bg-gray-100 p-2 rounded border border-gray-100 cursor-pointer transition-colors">
+                        <label class="flex items-center space-x-2 text-xs bg-white hover:bg-gray-50 p-2 rounded border border-gray-100 cursor-pointer transition-colors shadow-sm">
                             <input type="checkbox" ${p.pago ? 'checked' : ''} onclick="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
                             <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
                             <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
@@ -396,12 +410,11 @@
                     `;
                 });
 
-                // Escapa apóstrofos no nome para evitar erros ao passar no parâmetro da função delete
                 const nomeSeguro = divida.nome.replace(/'/g, "\\'");
 
                 itemHtml.innerHTML = `
-                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3">
-                        <div>
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+                        <div class="w-full">
                             <div class="flex items-center gap-2 flex-wrap">
                                 <h3 class="font-semibold text-gray-800">${divida.nome}</h3>
                                 <span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full ${todasPagas ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
@@ -411,14 +424,27 @@
                                     📅 ${formatarMesAno(divida.mesReferencia)}
                                 </span>
                             </div>
-                            <p class="text-xs text-gray-500 mt-1">
-                                ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
-                            </p>
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-1">
+                                <p class="text-xs text-gray-500">
+                                    ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x (${parcelasPagasCount}/${divida.parcelas.length} pagas)`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
+                                </p>
+                                <div class="flex items-center gap-3">
+                                    ${divida.tipo === 'parcelado' ? `
+                                        <button onclick="togglePainelParcelas(${divida.id})" id="icone-seta-${divida.id}" class="text-xs text-indigo-600 hover:text-indigo-800 font-semibold bg-indigo-50 px-2.5 py-1 rounded-lg transition-colors">
+                                            ▼ Ver parcelas
+                                        </button>
+                                    ` : ''}
+                                    <button onclick="deletarDivida(${divida.id}, '${nomeSeguro}')" class="text-xs text-red-400 hover:text-red-600 font-medium">Excluir</button>
+                                </div>
+                            </div>
                         </div>
-                        <button onclick="deletarDivida(${divida.id}, '${nomeSeguro}')" class="text-xs text-red-400 hover:text-red-600 font-medium self-end md:self-auto">Excluir dívida</button>
                     </div>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-100">
-                        ${parcelasHtml}
+                    
+                    <!-- Painel Retrátil de Parcelas (Oculto por padrão para dar um visual clean) -->
+                    <div id="painel-parcelas-${divida.id}" class="hidden mt-3 pt-3 border-t border-gray-100">
+                        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
+                            ${parcelasHtml}
+                        </div>
                     </div>
                 `;
                 container.appendChild(itemHtml);
