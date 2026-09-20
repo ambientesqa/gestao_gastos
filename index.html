@@ -102,6 +102,10 @@
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
                     <h2 class="text-lg font-semibold text-gray-700">Meus Gastos e Dívidas</h2>
                     <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <!-- Nova Caixa de Busca por Nome -->
+                        <input type="text" id="filtroNome" oninput="renderizar()" placeholder="🔍 Buscar por nome..." 
+                            class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto">
+                        
                         <select id="filtroStatus" onchange="renderizar()" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
                             <option value="todos">Todos os Status</option>
                             <option value="pendente">Pendentes</option>
@@ -144,8 +148,6 @@
         let gapiInited = false;
         let gisInited = false;
         let dividas = [];
-        
-        // ID FIXO DIRETAMENTE NO CÓDIGO
         let spreadsheetId = '1WY93hZvOOK4qjlt_r_E4ef6TXqhL-zMA436rnZONe8M';
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -243,19 +245,16 @@
         async function salvarNaPlanilha() {
             if (!spreadsheetId) return;
             try {
-                // 1. Limpa primeiro o intervalo inteiro da planilha para evitar lixo de dados antigos (exclusões)
                 await gapi.client.sheets.spreadsheets.values.clear({
                     spreadsheetId: spreadsheetId,
                     range: 'Página1!A1:E1000'
                 });
 
-                // 2. Prepara os novos dados atualizados
                 let rows = [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']];
                 dividas.forEach(d => {
                     rows.push([d.id, d.nome, d.valorTotal, d.mesReferencia, JSON.stringify(d)]);
                 });
 
-                // 3. Insere os dados atualizados limpos na planilha
                 await gapi.client.sheets.spreadsheets.values.update({
                     spreadsheetId: spreadsheetId,
                     range: 'Página1!A1:E' + rows.length,
@@ -322,6 +321,7 @@
         }
 
         function limparFiltros() {
+            document.getElementById('filtroNome').value = '';
             document.getElementById('filtroStatus').value = 'todos';
             document.getElementById('filtroMes').value = '';
             renderizar();
@@ -338,15 +338,21 @@
             const container = document.getElementById('listaDividas');
             container.innerHTML = '';
 
+            const filtroNome = document.getElementById('filtroNome').value.toLowerCase().trim();
             const filtroStatus = document.getElementById('filtroStatus').value;
             const filtroMes = document.getElementById('filtroMes').value;
 
+            // Filtro por Mês (se preenchido)
             let dividasDoMes = dividas;
             if (filtroMes) {
                 dividasDoMes = dividas.filter(divida => divida.mesReferencia === filtroMes);
             }
 
+            // Filtro por Nome e Status
             let dividasFiltradas = dividasDoMes.filter(divida => {
+                const matchNome = divida.nome.toLowerCase().includes(filtroNome);
+                if (!matchNome) return false;
+
                 const todasPagas = divida.parcelas.every(p => p.pago);
                 if (filtroStatus === 'pendente' && todasPagas) return false;
                 if (filtroStatus === 'emdia' && !todasPagas) return false;
