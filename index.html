@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestão de Gastos e Dívidas - Nuvem</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Identity Services para autenticação -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <!-- Google API Client Library -->
+    <script src="https://apis.google.com/js/api.js" async defer></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gray-50 text-gray-800 min-h-screen flex flex-col justify-between">
+
+    <div class="max-w-4xl w-full mx-auto px-4 py-8 flex-grow">
+        <!-- Cabeçalho com Botão de Login do Google -->
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-center gap-4">
+            <div>
+                <h1 class="text-3xl font-bold text-indigo-600 text-center md:text-left">Gestão de Gastos</h1>
+                <p class="text-gray-500 text-sm mt-1">Sincronizado com o seu Google Sheets</p>
+            </div>
+            <div id="authContainer">
+                <button id="authorize_button" onclick="handleAuthClick()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-colors">
+                    Conectar ao Google Drive
+                </button>
+                <button id="signout_button" onclick="handleSignoutClick()" class="hidden bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
+                    Desconectar Google
+                </button>
+            </div>
+        </header>
+
+        <!-- Aviso de Conexão -->
+        <div id="loginWarning" class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 text-sm flex items-center justify-between">
+            <span>⚠️ Por favor, conecte a sua conta Google para carregar e salvar suas dívidas na nuvem.</span>
+        </div>
+
+        <!-- Conteúdo Principal (Oculto até logar) -->
+        <div id="mainContent" class="opacity-50 pointer-events-none transition-opacity">
+            <!-- Cards de Resumo -->
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <span id="labelTotalGeral" class="text-sm text-gray-500 font-medium">Total Geral</span>
+                    <h2 id="totalGeral" class="text-2xl font-bold text-gray-800 mt-1">R$ 0,00</h2>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <span id="labelTotalPendente" class="text-sm text-gray-500 font-medium">Total Pendente</span>
+                    <h2 id="totalPendente" class="text-2xl font-bold text-amber-600 mt-1">R$ 0,00</h2>
+                </div>
+                <div class="bg-white p-5 rounded-xl shadow-sm border border-gray-100">
+                    <span id="labelTotalPago" class="text-sm text-gray-500 font-medium">Total Pago</span>
+                    <h2 id="totalPago" class="text-2xl font-bold text-emerald-600 mt-1">R$ 0,00</h2>
+                </div>
+            </div>
+
+            <!-- Formulário de Cadastro -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6 mb-8">
+                <h2 class="text-lg font-semibold text-gray-700 mb-4">Adicionar Nova Dívida / Gasto</h2>
+                <form id="formDivida" class="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+                    <div class="md:col-span-4">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Nome da Dívida</label>
+                        <input type="text" id="nome" required placeholder="Ex: Cartão, Aluguel..." 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Valor Total (R$)</label>
+                        <input type="number" step="0.01" id="valor" required placeholder="0.00" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm">
+                    </div>
+                    <div class="md:col-span-3">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Mês de Referência</label>
+                        <input type="month" id="mesReferencia" required 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                    </div>
+                    <div class="md:col-span-2">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Forma de Pagamento</label>
+                        <select id="tipo" onchange="toggleParcelas()" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm bg-white">
+                            <option value="avista">À vista</option>
+                            <option value="parcelado">Parcelado</option>
+                        </select>
+                    </div>
+                    <div class="md:col-span-12 hidden" id="divParcelas">
+                        <label class="block text-xs font-medium text-gray-600 mb-1">Nº de Vezes</label>
+                        <input type="number" id="parcelas" min="2" max="99" value="2" 
+                            class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm md:w-1/4">
+                    </div>
+                    <div class="md:col-span-12 flex justify-end mt-2">
+                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-5 py-2 rounded-lg text-sm transition-colors w-full md:w-auto">
+                            Adicionar Gasto
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Lista de Dívidas -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+                <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
+                    <h2 class="text-lg font-semibold text-gray-700">Meus Gastos e Dívidas</h2>
+                    <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                        <select id="filtroStatus" onchange="renderizar()" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                            <option value="todos">Todos os Status</option>
+                            <option value="pendente">Pendentes</option>
+                            <option value="emdia">Em dia (Pagos)</option>
+                        </select>
+                        <input type="month" id="filtroMes" onchange="renderizar()" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                        <button onclick="limparFiltros()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium px-2 py-1">Limpar Filtros</button>
+                    </div>
+                </div>
+                <div class="flex justify-between items-center mb-4">
+                    <span class="text-xs text-gray-400" id="contadorResultados">Exibindo registros</span>
+                    <button onclick="sincronizarComPlanilha()" class="text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors">🔄 Sincronizar Nuvem</button>
+                </div>
+                <div id="listaDividas" class="space-y-4">
+                    <p id="mensagemVazia" class="text-gray-400 text-center py-6 text-sm">Carregando dados da nuvem...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rodapé -->
+    <footer class="text-center py-6 text-xs text-gray-500 border-t border-gray-200 mt-8 bg-white">
+        <p>Desenvolvido por <span class="font-semibold text-gray-700">WM SecureSystems - Williams Macedo</span></p>
+        <p class="mt-1">
+            <a href="https://wa.me/5511973467966" target="_blank" class="inline-flex items-center gap-1.5 text-emerald-600 hover:text-emerald-700 font-medium transition-colors">
+                <svg class="w-4 h-4 fill-current" viewBox="0 0 24 24">
+                    <path d="M12.04 2c-5.52 0-10 4.48-10 10 0 1.77.46 3.45 1.33 4.93l-1.42 5.18 5.32-1.4c1.42.78 3.05 1.22 4.77 1.22 5.52 0 10-4.48 10-10s-4.48-10-10-10zm5.82 14.19c-.24.67-1.38 1.28-1.92 1.36-.51.08-1.15.12-3.71-.93-2.58-1.05-4.24-3.68-4.37-3.85-.13-.17-1.04-1.39-1.04-2.65 0-1.26.66-1.88.9-2.14.24-.26.52-.32.7-.32.18 0 .36 0 .52.01.17.01.4-.06.63.48.24.58.82 2.01.89 2.15.07.14.12.31.02.5-.1.19-.15.31-.3.49-.15.18-.32.4-.46.54-.15.15-.31.31-.13.61.18.3 0.8 1.33 1.72 2.15 1.18 1.05 2.18 1.37 2.49 1.52.31.15.49.13.67-.08.18-.21.78-.91.99-1.22.21-.31.42-.26.7-.15.28.11 1.77.83 2.07.98.3.15.5.23.57.35.07.12.07.7-.17 1.37z"/>
+                </svg>
+                (11) 97346-7966
+            </a>
+        </p>
+    </footer>
+
+    <!-- Script de Integração com Google Sheets -->
+    <script>
+        const CLIENT_ID = '164830185083-8gej89qqbb9b8lmcsi47rc9dlbififhf.apps.googleusercontent.com';
+        const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
+
+        let tokenClient;
+        let gapiInited = false;
+        let gisInited = false;
+        let dividas = [];
+        let spreadsheetId = localStorage.getItem('google_sheet_id') || null;
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const dataAtual = new Date().toISOString().slice(0, 7);
+            document.getElementById('mesReferencia').value = dataAtual;
+        });
+
+        function gapiLoaded() {
+            gapi.load('client', initializeGapiClient);
+        }
+
+        async function initializeGapiClient() {
+            await gapi.client.init({
+                discoveryDocs: ['https://sheets.googleapis.com/$discovery/rest?version=v4'],
+            });
+            gapiInited = true;
+            maybeEnableButton();
+        }
+
+        function gisLoaded() {
+            tokenClient = google.accounts.oauth2.initTokenClient({
+                client_id: CLIENT_ID,
+                scope: SCOPES,
+                callback: '', // Definido no momento do login
+            });
+            gisInited = true;
+            maybeEnableButton();
+        }
+
+        function maybeEnableButton() {
+            if (gapiInited && gisInited) {
+                document.getElementById('authorize_button').classList.remove('hidden');
+            }
+        }
+
+        function handleAuthClick() {
+            tokenClient.callback = async (resp) => {
+                if (resp.error !== undefined) {
+                    throw (resp);
+                }
+                document.getElementById('authorize_button').classList.add('hidden');
+                document.getElementById('signout_button').classList.remove('hidden');
+                document.getElementById('loginWarning').classList.add('hidden');
+                document.getElementById('mainContent').classList.remove('opacity-50', 'pointer-events-none');
+                
+                await verificarOuCriarPlanilha();
+                carregarDadosDaPlanilha();
+            };
+
+            if (gapi.client.getToken() === null) {
+                tokenClient.requestAccessToken({prompt: 'consent'});
+            } else {
+                tokenClient.requestAccessToken({prompt: ''});
+            }
+        }
+
+        function handleSignoutClick() {
+            const token = gapi.client.getToken();
+            if (token !== null) {
+                google.accounts.oauth2.revoke(token.access_token, () => {
+                    gapi.client.setToken('');
+                    document.getElementById('authorize_button').classList.remove('hidden');
+                    document.getElementById('signout_button').classList.add('hidden');
+                    document.getElementById('loginWarning').classList.remove('hidden');
+                    document.getElementById('mainContent').classList.add('opacity-50', 'pointer-events-none');
+                });
+            }
+        }
+
+        async function verificarOuCriarPlanilha() {
+            if (spreadsheetId) return;
+            try {
+                // Cria uma nova planilha no Drive do usuário
+                const response = await gapi.client.sheets.spreadsheets.create({
+                    properties: { title: 'Gestão de Gastos - WM SecureSystems' }
+                });
+                spreadsheetId = response.result.spreadsheetId;
+                localStorage.setItem('google_sheet_id', spreadsheetId);
+
+                // Cria o cabeçalho na planilha
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: spreadsheetId,
+                    range: 'Página1!A1:E1',
+                    valueInputOption: 'USER_ENTERED',
+                    resource: { values: [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']] }
+                });
+            } catch (err) {
+                console.error("Erro ao criar planilha", err);
+            }
+        }
+
+        async function carregarDadosDaPlanilha() {
+            try {
+                const response = await gapi.client.sheets.spreadsheets.values.get({
+                    spreadsheetId: spreadsheetId,
+                    range: 'Página1!A2:E',
+                });
+                const rows = response.result.values;
+                dividas = [];
+                if (rows) {
+                    rows.forEach(row => {
+                        if (row[4]) {
+                            try {
+                                dividas.push(JSON.parse(row[4]));
+                            } catch (e) {}
+                        }
+                    });
+                }
+                renderizar();
+            } catch (err) {
+                console.error("Erro ao carregar dados", err);
+            }
+        }
+
+        async function salvarNaPlanilha() {
+            if (!spreadsheetId) return;
+            try {
+                let rows = [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']];
+                dividas.forEach(d => {
+                    rows.push([d.id, d.nome, d.valorTotal, d.mesReferencia, JSON.stringify(d)]);
+                });
+
+                await gapi.client.sheets.spreadsheets.values.update({
+                    spreadsheetId: spreadsheetId,
+                    range: 'Página1!A1:E' + rows.length,
+                    valueInputOption: 'USER_ENTERED',
+                    resource: { values: rows }
+                });
+            } catch (err) {
+                console.error("Erro ao salvar na planilha", err);
+            }
+        }
+
+        function sincronizarComPlanilha() {
+            carregarDadosDaPlanilha();
+            alert('Dados sincronizados com o Google Sheets com sucesso!');
+        }
+
+        function toggleParcelas() {
+            const tipo = document.getElementById('tipo').value;
+            const divParcelas = document.getElementById('divParcelas');
+            if (tipo === 'parcelado') divParcelas.classList.remove('hidden');
+            else divParcelas.classList.add('hidden');
+        }
+
+        document.getElementById('formDivida').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const nome = document.getElementById('nome').value;
+            const valorTotal = parseFloat(document.getElementById('valor').value);
+            const mesReferencia = document.getElementById('mesReferencia').value;
+            const tipo = document.getElementById('tipo').value;
+            const qtdParcelas = tipo === 'parcelado' ? parseInt(document.getElementById('parcelas').value) : 1;
+            const valorParcela = valorTotal / qtdParcelas;
+            
+            let listaDeParcelas = [];
+            for (let i = 1; i <= qtdParcelas; i++) {
+                listaDeParcelas.push({ numero: i, valor: valorParcela, pago: false });
+            }
+
+            const novaDivida = { id: Date.now(), nome, valorTotal, mesReferencia, tipo, parcelas: listaDeParcelas };
+            dividas.push(novaDivida);
+            
+            await salvarNaPlanilha();
+            renderizar();
+            this.reset();
+            document.getElementById('mesReferencia').value = new Date().toISOString().slice(0, 7);
+            toggleParcelas();
+        });
+
+        async function alternarParcela(dividaId, parcelaNum) {
+            const divida = dividas.find(d => d.id === dividaId);
+            if (divida) {
+                const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
+                if (parcela) {
+                    parcela.pago = !parcela.pago;
+                    await salvarNaPlanilha();
+                    renderizar();
+                }
+            }
+        }
+
+        async function deletarDivida(id) {
+            dividas = dividas.filter(d => d.id !== id);
+            await salvarNaPlanilha();
+            renderizar();
+        }
+
+        async function limparTudo() {
+            if (confirm('Deseja realmente apagar todos os registros da nuvem?')) {
+                dividas = [];
+                await salvarNaPlanilha();
+                renderizar();
+            }
+        }
+
+        function limparFiltros() {
+            document.getElementById('filtroStatus').value = 'todos';
+            document.getElementById('filtroMes').value = '';
+            renderizar();
+        }
+
+        function formatarMesAno(anoMes) {
+            if (!anoMes) return '';
+            const [ano, mes] = anoMes.split('-');
+            const meses = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+            return `${meses[parseInt(mes) - 1]} de ${ano}`;
+        }
+
+        function renderizar() {
+            const container = document.getElementById('listaDividas');
+            container.innerHTML = '';
+
+            const filtroStatus = document.getElementById('filtroStatus').value;
+            const filtroMes = document.getElementById('filtroMes').value;
+
+            let dividasDoMes = dividas;
+            if (filtroMes) {
+                dividasDoMes = dividas.filter(divida => divida.mesReferencia === filtroMes);
+            }
+
+            let dividasFiltradas = dividasDoMes.filter(divida => {
+                const todasPagas = divida.parcelas.every(p => p.pago);
+                if (filtroStatus === 'pendente' && todasPagas) return false;
+                if (filtroStatus === 'emdia' && !todasPagas) return false;
+                return true;
+            });
+
+            document.getElementById('contadorResultados').innerText = `Mostrando ${dividasFiltradas.length} de ${dividas.length} registros`;
+            calcularResumo(dividasDoMes, filtroMes);
+
+            if (dividas.length === 0) {
+                container.innerHTML = `<p class="text-gray-400 text-center py-6 text-sm">Nenhum gasto cadastrado no momento.</p>`;
+                return;
+            }
+
+            if (dividasFiltradas.length === 0) {
+                container.innerHTML = `<p class="text-gray-400 text-center py-6 text-sm">Nenhum gasto encontrado com os filtros selecionados.</p>`;
+                return;
+            }
+
+            dividasFiltradas.forEach(divida => {
+                const todasPagas
