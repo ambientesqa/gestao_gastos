@@ -3,7 +3,15 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestão de Gastos e Dívidas</title>
+    <title>Gestão de Gastos e Dívidas - Nuvem</title>
+    
+    <!-- Configurações para PWA (Instalação no Celular) -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#4f46e5">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Gestão de Gastos">
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Identity Services para autenticação -->
@@ -159,8 +167,17 @@
         </p>
     </footer>
 
-    <!-- Script de Integração com Google Sheets -->
+    <!-- Script de Integração com Google Sheets e PWA -->
     <script>
+        // Registro do Service Worker para PWA
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('./sw.js')
+                    .then((reg) => console.log('Service Worker registrado com sucesso:', reg.scope))
+                    .catch((err) => console.log('Falha ao registrar Service Worker:', err));
+            });
+        }
+
         const CLIENT_ID = '164830185083-8gej89qqbb9b8lmcsi47rc9dlbififhf.apps.googleusercontent.com';
         const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
@@ -295,7 +312,6 @@
             else divParcelas.classList.add('hidden');
         }
 
-        // Abre o modal de calendário e retorna uma Promise com a data escolhida
         function abrirModalCalendario(titulo, subtitulo) {
             return new Promise((resolve) => {
                 document.getElementById('modalTitulo').innerText = titulo;
@@ -350,7 +366,6 @@
             const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
             if (!parcela) return;
 
-            // Se o usuário está tentando marcar como PAGO
             if (!parcela.pago) {
                 if (divida.tipo === 'avista') {
                     const confirmar = confirm(`Deseja confirmar o pagamento à vista de "${divida.nome}" no valor de R$ ${parcela.valor.toFixed(2)}?`);
@@ -360,7 +375,6 @@
                     }
                     parcela.pago = true;
                 } else {
-                    // Parcelado: Pergunta se quer marcar e pede a data da próxima parcela
                     const confirmar = confirm(`Deseja confirmar o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
                     if (!confirmar) {
                         event.target.checked = false;
@@ -380,7 +394,6 @@
                     parcela.pago = true;
                 }
             } else {
-                // Se o usuário está tentando DESMARCAR (voltar para pendente)
                 const confirmacao = confirm(`Deseja realmente desfazer o pagamento da ${divida.tipo === 'avista' ? 'compra' : parcela.numero + 'ª parcela'} de "${divida.nome}"?`);
                 if (confirmacao) {
                     parcela.pago = false;
