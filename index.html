@@ -24,7 +24,7 @@
                 <h1 class="text-3xl font-bold text-indigo-600 text-center md:text-left">Gestão de Gastos</h1>
                 <p class="text-gray-500 text-sm mt-1">Sincronizado com o seu Google Sheets</p>
             </div>
-            <div id="authContainer" class="flex flex-col items-end gap-2">
+            <div id="authContainer">
                 <button id="authorize_button" onclick="handleAuthClick()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-colors">
                     Conectar ao Google Drive
                 </button>
@@ -35,17 +35,8 @@
         </header>
 
         <!-- Aviso de Conexão -->
-        <div id="loginWarning" class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 text-sm flex flex-col gap-2">
+        <div id="loginWarning" class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 text-sm flex items-center justify-between">
             <span>⚠️ Por favor, conecte a sua conta Google para carregar e salvar suas dívidas na nuvem.</span>
-        </div>
-
-        <!-- Opção Avançada / Configurar ID Manual caso o celular bloqueie a busca -->
-        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 text-xs flex flex-col md:flex-row items-center justify-between gap-3">
-            <span class="text-gray-500">Se a planilha não carregar automaticamente no celular, cole o ID dela aqui:</span>
-            <div class="flex gap-2 w-full md:w-auto">
-                <input type="text" id="inputIdManual" placeholder="Cole o ID do Google Sheets aqui" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs flex-grow focus:outline-none focus:ring-2 focus:ring-indigo-500">
-                <button onclick="salvarIdManual()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">Vincular</button>
-            </div>
         </div>
 
         <!-- Conteúdo Principal (Oculto até logar) -->
@@ -153,7 +144,9 @@
         let gapiInited = false;
         let gisInited = false;
         let dividas = [];
-        let spreadsheetId = localStorage.getItem('google_sheet_id') || null;
+        
+        // ID FIXO DIRETAMENTE NO CÓDIGO
+        let spreadsheetId = '1WY93hZvOOK4qjlt_r_E4ef6TXqhL-zMA436rnZONe8M';
 
         document.addEventListener('DOMContentLoaded', () => {
             const dataAtual = new Date().toISOString().slice(0, 7);
@@ -199,7 +192,6 @@
                 document.getElementById('loginWarning').classList.add('hidden');
                 document.getElementById('mainContent').classList.remove('opacity-50', 'pointer-events-none');
                 
-                await verificarOuCriarPlanilha();
                 carregarDadosDaPlanilha();
             };
 
@@ -220,61 +212,6 @@
                     document.getElementById('loginWarning').classList.remove('hidden');
                     document.getElementById('mainContent').classList.add('opacity-50', 'pointer-events-none');
                 });
-            }
-        }
-
-        function salvarIdManual() {
-            const idDigitado = document.getElementById('inputIdManual').value.trim();
-            if (idDigitado) {
-                spreadsheetId = idDigitado;
-                localStorage.setItem('google_sheet_id', spreadsheetId);
-                alert('ID da planilha salvo com sucesso! A carregar dados...');
-                document.getElementById('loginWarning').classList.add('hidden');
-                document.getElementById('authorize_button').classList.add('hidden');
-                document.getElementById('signout_button').classList.remove('hidden');
-                document.getElementById('mainContent').classList.remove('opacity-50', 'pointer-events-none');
-                carregarDadosDaPlanilha();
-            } else {
-                alert('Por favor, insira um ID válido.');
-            }
-        }
-
-        async function verificarOuCriarPlanilha() {
-            const nomePlanilha = 'Gestão de Gastos - WM SecureSystems';
-            
-            try {
-                // Se já tivermos um ID guardado e ele for válido, usamos ele direto para evitar buscas lentas no telemóvel
-                if (spreadsheetId) {
-                    return;
-                }
-
-                const response = await gapi.client.drive.files.list({
-                    q: `name = '${nomePlanilha}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
-                    pageSize: 1,
-                    fields: 'files(id, name)'
-                });
-
-                const files = response.result.files;
-                if (files && files.length > 0) {
-                    spreadsheetId = files[0].id;
-                    localStorage.setItem('google_sheet_id', spreadsheetId);
-                    return;
-                }
-
-                const createResponse = await gapi.client.sheets.spreadsheets.create({
-                    properties: { title: nomePlanilha }
-                });
-                spreadsheetId = createResponse.result.spreadsheetId;
-                localStorage.setItem('google_sheet_id', spreadsheetId);
-
-                await gapi.client.sheets.spreadsheets.values.update({
-                    spreadsheetId: spreadsheetId,
-                    range: 'Página1!A1:E1',
-                    valueInputOption: 'USER_ENTERED',
-                    resource: { values: [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']] }
-                });
-            } catch (err) {
-                console.error("Erro ao verificar ou criar planilha", err);
             }
         }
 
@@ -299,18 +236,26 @@
                 renderizar();
             } catch (err) {
                 console.error("Erro ao carregar dados", err);
-                document.getElementById('mensagemVazia').innerText = "Erro ao carregar do Google Sheets. Verifique o ID da planilha.";
+                document.getElementById('mensagemVazia').innerText = "Erro ao carregar do Google Sheets. Verifique a conexão.";
             }
         }
 
         async function salvarNaPlanilha() {
             if (!spreadsheetId) return;
             try {
+                // 1. Limpa primeiro o intervalo inteiro da planilha para evitar lixo de dados antigos (exclusões)
+                await gapi.client.sheets.spreadsheets.values.clear({
+                    spreadsheetId: spreadsheetId,
+                    range: 'Página1!A1:E1000'
+                });
+
+                // 2. Prepara os novos dados atualizados
                 let rows = [['ID', 'Nome', 'ValorTotal', 'MesReferencia', 'DadosJSON']];
                 dividas.forEach(d => {
                     rows.push([d.id, d.nome, d.valorTotal, d.mesReferencia, JSON.stringify(d)]);
                 });
 
+                // 3. Insere os dados atualizados limpos na planilha
                 await gapi.client.sheets.spreadsheets.values.update({
                     spreadsheetId: spreadsheetId,
                     range: 'Página1!A1:E' + rows.length,
