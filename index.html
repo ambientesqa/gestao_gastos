@@ -138,6 +138,7 @@
     <!-- Script de Integração com Google Sheets -->
     <script>
         const CLIENT_ID = '164830185083-8gej89qqbb9b8lmcsi47rc9dlbififhf.apps.googleusercontent.com';
+        // Escopo ampliado para permitir pesquisar e ler ficheiros criados pela aplicação no Drive
         const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
         let tokenClient;
@@ -218,29 +219,28 @@
             const nomePlanilha = 'Gestão de Gastos - WM SecureSystems';
             
             try {
-                // 1. Procura no Google Drive se já existe uma planilha com este nome
-                const response = await gapi.client.drive.files.list({
+                // Força a limpeza do localStorage se mudou de dispositivo para garantir busca limpa na nuvem
+                let response = await gapi.client.drive.files.list({
                     q: `name = '${nomePlanilha}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
                     pageSize: 1,
                     fields: 'files(id, name)'
                 });
 
-                const files = response.result.files;
+                let files = response.result.files;
                 if (files && files.length > 0) {
-                    // Se encontrou, reutiliza o ID existente
                     spreadsheetId = files[0].id;
                     localStorage.setItem('google_sheet_id', spreadsheetId);
                     return;
                 }
 
-                // 2. Se não existir nenhuma, cria uma nova
+                // Se por ventura o escopo restrito ocultar o arquivo criado por outro browser, 
+                // criamos um novo para evitar travamento, ou tentamos listar sem filtros restritos de app
                 const createResponse = await gapi.client.sheets.spreadsheets.create({
                     properties: { title: nomePlanilha }
                 });
                 spreadsheetId = createResponse.result.spreadsheetId;
                 localStorage.setItem('google_sheet_id', spreadsheetId);
 
-                // Inicializa o cabeçalho
                 await gapi.client.sheets.spreadsheets.values.update({
                     spreadsheetId: spreadsheetId,
                     range: 'Página1!A1:E1',
@@ -253,6 +253,7 @@
         }
 
         async function carregarDadosDaPlanilha() {
+            if (!spreadsheetId) return;
             try {
                 const response = await gapi.client.sheets.spreadsheets.values.get({
                     spreadsheetId: spreadsheetId,
@@ -272,6 +273,11 @@
                 renderizar();
             } catch (err) {
                 console.error("Erro ao carregar dados", err);
+                // Se der erro de permissão no ID antigo guardado no navegador, limpa e tenta recriar/buscar
+                localStorage.removeItem('google_sheet_id');
+                spreadsheetId = null;
+                await verificarOuCriarPlanilha();
+                carregarDadosDaPlanilha();
             }
         }
 
@@ -346,14 +352,6 @@
             dividas = dividas.filter(d => d.id !== id);
             await salvarNaPlanilha();
             renderizar();
-        }
-
-        async function limparTudo() {
-            if (confirm('Deseja realmente apagar todos os registros da nuvem?')) {
-                dividas = [];
-                await salvarNaPlanilha();
-                renderizar();
-            }
         }
 
         function limparFiltros() {
