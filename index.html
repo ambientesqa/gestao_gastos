@@ -25,7 +25,7 @@
                 <p class="text-gray-500 text-sm mt-1">Sincronizado com o seu Google Sheets</p>
             </div>
             <div id="authContainer">
-                <button id="authorize_button" onclick="handleAuthClick()" class="hidden bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-colors">
+                <button id="authorize_button" onclick="handleAuthClick()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-colors">
                     Conectar ao Google Drive
                 </button>
                 <button id="signout_button" onclick="handleSignoutClick()" class="hidden bg-gray-200 hover:bg-gray-300 text-gray-700 text-xs font-medium px-3 py-2 rounded-lg transition-colors">
@@ -167,16 +167,15 @@
             tokenClient = google.accounts.oauth2.initTokenClient({
                 client_id: CLIENT_ID,
                 scope: SCOPES,
-                callback: '', // Definido no momento do login
+                callback: '', 
             });
             gisInited = true;
             maybeEnableButton();
         }
 
         function maybeEnableButton() {
-            if (gapiInited && gisInited) {
-                document.getElementById('authorize_button').classList.remove('hidden');
-            }
+            // Garante que o botão aparece independentemente das flags do gapi
+            document.getElementById('authorize_button').classList.remove('hidden');
         }
 
         function handleAuthClick() {
@@ -216,14 +215,12 @@
         async function verificarOuCriarPlanilha() {
             if (spreadsheetId) return;
             try {
-                // Cria uma nova planilha no Drive do usuário
                 const response = await gapi.client.sheets.spreadsheets.create({
                     properties: { title: 'Gestão de Gastos - WM SecureSystems' }
                 });
                 spreadsheetId = response.result.spreadsheetId;
                 localStorage.setItem('google_sheet_id', spreadsheetId);
 
-                // Cria o cabeçalho na planilha
                 await gapi.client.sheets.spreadsheets.values.update({
                     spreadsheetId: spreadsheetId,
                     range: 'Página1!A1:E1',
@@ -384,5 +381,72 @@
                 return;
             }
 
+            dividasFiltradas.forEach(divida => {
+                const todasPagas = divida.parcelas.every(p => p.pago);
+                const itemHtml = document.createElement('div');
+                itemHtml.className = `p-4 rounded-xl border transition-all ${todasPagas ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-200'}`;
+
+                let parcelasHtml = '';
+                divida.parcelas.forEach(p => {
+                    parcelasHtml += `
+                        <label class="flex items-center space-x-2 text-xs bg-gray-50 hover:bg-gray-100 p-2 rounded border border-gray-100 cursor-pointer transition-colors">
+                            <input type="checkbox" ${p.pago ? 'checked' : ''} onchange="alternarParcela(${divida.id}, ${p.numero})" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+                            <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
+                            <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
+                            <span class="ml-auto font-semibold ${p.pago ? 'text-emerald-600' : 'text-amber-600'}">${p.pago ? 'Pago' : 'Pendente'}</span>
+                        </label>
+                    `;
+                });
+
+                itemHtml.innerHTML = `
+                    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3">
+                        <div>
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <h3 class="font-semibold text-gray-800">${divida.nome}</h3>
+                                <span class="px-2 py-0.5 text-[10px] uppercase font-bold tracking-wider rounded-full ${todasPagas ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}">
+                                    ${todasPagas ? 'Em dia' : 'Pendente'}
+                                </span>
+                                <span class="px-2 py-0.5 text-[10px] font-medium rounded bg-gray-100 text-gray-600">
+                                    📅 ${formatarMesAno(divida.mesReferencia)}
+                                </span>
+                            </div>
+                            <p class="text-xs text-gray-500 mt-1">
+                                ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
+                            </p>
+                        </div>
+                        <button onclick="deletarDivida(${divida.id})" class="text-xs text-red-400 hover:text-red-600 font-medium self-end md:self-auto">Excluir dívida</button>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-100">
+                        ${parcelasHtml}
+                    </div>
+                `;
+                container.appendChild(itemHtml);
+            });
+        }
+
+        function calcularResumo(listaDeDividas, mesFiltrado) {
+            let geralTotal = 0, geralPago = 0, geralPendente = 0;
+            listaDeDividas.forEach(divida => {
+                geralTotal += divida.valorTotal;
+                let valorPagoDivida = divida.parcelas.filter(p => p.pago).reduce((acc, p) => acc + p.valor, 0);
+                let valorPendenteDivida = divida.valorTotal - valorPagoDivida;
+                geralPago += valorPagoDivida;
+                geralPendente += valorPendenteDivida;
+            });
+
+            const labelMes = mesFiltrado ? ` (${formatarMesAno(mesFiltrado)})` : ' Geral';
+            document.getElementById('labelTotalGeral').innerText = `Total${labelMes}`;
+            document.getElementById('labelTotalPendente').innerText = `Total Pendente${labelMes}`;
+            document.getElementById('labelTotalPago').innerText = `Total Pago${labelMes}`;
+
+            document.getElementById('totalGeral').innerText = `R$ ${geralTotal.toFixed(2)}`;
+            document.getElementById('totalPendente').innerText = `R$ ${geralPendente.toFixed(2)}`;
+            document.getElementById('totalPago').innerText = `R$ ${geralPago.toFixed(2)}`;
+        }
+    </script>
+    <script async defer src="https://apis.google.com/js/api.js" onload="gapiLoaded()"></script>
+    <script async defer src="https://accounts.google.com/gsi/client" onload="gisLoaded()"></script>
+</body>
+</html>
             dividasFiltradas.forEach(divida => {
                 const todasPagas
