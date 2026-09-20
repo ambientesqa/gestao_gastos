@@ -328,7 +328,6 @@
             }
         }
 
-        // Função para abrir/fechar o painel de parcelas de forma limpa
         function togglePainelParcelas(dividaId) {
             const painel = document.getElementById(`painel-parcelas-${dividaId}`);
             const icone = document.getElementById(`icone-seta-${dividaId}`);
@@ -395,6 +394,8 @@
             dividasFiltradas.forEach(divida => {
                 const todasPagas = divida.parcelas.every(p => p.pago);
                 const parcelasPagasCount = divida.parcelas.filter(p => p.pago).length;
+                const valorParcelaUnitaria = divida.parcelas.length > 0 ? divida.parcelas[0].valor : divida.valorTotal;
+                
                 const itemHtml = document.createElement('div');
                 itemHtml.className = `p-4 rounded-xl border transition-all ${todasPagas ? 'bg-emerald-50/40 border-emerald-200' : 'bg-white border-gray-200'}`;
 
@@ -426,7 +427,7 @@
                             </div>
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mt-1">
                                 <p class="text-xs text-gray-500">
-                                    ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x (${parcelasPagasCount}/${divida.parcelas.length} pagas)`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
+                                    ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x (${parcelasPagasCount}/${divida.parcelas.length} pagas) • Valor da Parcela: <span class="font-medium text-indigo-600">R$ ${valorParcelaUnitaria.toFixed(2)}</span>`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
                                 </p>
                                 <div class="flex items-center gap-3">
                                     ${divida.tipo === 'parcelado' ? `
@@ -440,7 +441,7 @@
                         </div>
                     </div>
                     
-                    <!-- Painel Retrátil de Parcelas (Oculto por padrão para dar um visual clean) -->
+                    <!-- Painel Retrátil de Parcelas -->
                     <div id="painel-parcelas-${divida.id}" class="hidden mt-3 pt-3 border-t border-gray-100">
                         <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 max-h-56 overflow-y-auto pr-1">
                             ${parcelasHtml}
