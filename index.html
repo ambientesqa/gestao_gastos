@@ -24,7 +24,7 @@
                 <h1 class="text-3xl font-bold text-indigo-600 text-center md:text-left">Gestão de Gastos</h1>
                 <p class="text-gray-500 text-sm mt-1">Sincronizado com o seu Google Sheets</p>
             </div>
-            <div id="authContainer">
+            <div id="authContainer" class="flex flex-col items-end gap-2">
                 <button id="authorize_button" onclick="handleAuthClick()" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold px-4 py-2 rounded-lg shadow-sm transition-colors">
                     Conectar ao Google Drive
                 </button>
@@ -35,8 +35,17 @@
         </header>
 
         <!-- Aviso de Conexão -->
-        <div id="loginWarning" class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 text-sm flex items-center justify-between">
+        <div id="loginWarning" class="bg-amber-50 border border-amber-200 text-amber-800 p-4 rounded-xl mb-6 text-sm flex flex-col gap-2">
             <span>⚠️ Por favor, conecte a sua conta Google para carregar e salvar suas dívidas na nuvem.</span>
+        </div>
+
+        <!-- Opção Avançada / Configurar ID Manual caso o celular bloqueie a busca -->
+        <div class="bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6 text-xs flex flex-col md:flex-row items-center justify-between gap-3">
+            <span class="text-gray-500">Se a planilha não carregar automaticamente no celular, cole o ID dela aqui:</span>
+            <div class="flex gap-2 w-full md:w-auto">
+                <input type="text" id="inputIdManual" placeholder="Cole o ID do Google Sheets aqui" class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs flex-grow focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button onclick="salvarIdManual()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-medium px-3 py-1.5 rounded-lg transition-colors">Vincular</button>
+            </div>
         </div>
 
         <!-- Conteúdo Principal (Oculto até logar) -->
@@ -138,7 +147,6 @@
     <!-- Script de Integração com Google Sheets -->
     <script>
         const CLIENT_ID = '164830185083-8gej89qqbb9b8lmcsi47rc9dlbififhf.apps.googleusercontent.com';
-        // Escopo ampliado para permitir pesquisar e ler ficheiros criados pela aplicação no Drive
         const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 
         let tokenClient;
@@ -215,26 +223,44 @@
             }
         }
 
+        function salvarIdManual() {
+            const idDigitado = document.getElementById('inputIdManual').value.trim();
+            if (idDigitado) {
+                spreadsheetId = idDigitado;
+                localStorage.setItem('google_sheet_id', spreadsheetId);
+                alert('ID da planilha salvo com sucesso! A carregar dados...');
+                document.getElementById('loginWarning').classList.add('hidden');
+                document.getElementById('authorize_button').classList.add('hidden');
+                document.getElementById('signout_button').classList.remove('hidden');
+                document.getElementById('mainContent').classList.remove('opacity-50', 'pointer-events-none');
+                carregarDadosDaPlanilha();
+            } else {
+                alert('Por favor, insira um ID válido.');
+            }
+        }
+
         async function verificarOuCriarPlanilha() {
             const nomePlanilha = 'Gestão de Gastos - WM SecureSystems';
             
             try {
-                // Força a limpeza do localStorage se mudou de dispositivo para garantir busca limpa na nuvem
-                let response = await gapi.client.drive.files.list({
+                // Se já tivermos um ID guardado e ele for válido, usamos ele direto para evitar buscas lentas no telemóvel
+                if (spreadsheetId) {
+                    return;
+                }
+
+                const response = await gapi.client.drive.files.list({
                     q: `name = '${nomePlanilha}' and mimeType = 'application/vnd.google-apps.spreadsheet' and trashed = false`,
                     pageSize: 1,
                     fields: 'files(id, name)'
                 });
 
-                let files = response.result.files;
+                const files = response.result.files;
                 if (files && files.length > 0) {
                     spreadsheetId = files[0].id;
                     localStorage.setItem('google_sheet_id', spreadsheetId);
                     return;
                 }
 
-                // Se por ventura o escopo restrito ocultar o arquivo criado por outro browser, 
-                // criamos um novo para evitar travamento, ou tentamos listar sem filtros restritos de app
                 const createResponse = await gapi.client.sheets.spreadsheets.create({
                     properties: { title: nomePlanilha }
                 });
@@ -273,11 +299,7 @@
                 renderizar();
             } catch (err) {
                 console.error("Erro ao carregar dados", err);
-                // Se der erro de permissão no ID antigo guardado no navegador, limpa e tenta recriar/buscar
-                localStorage.removeItem('google_sheet_id');
-                spreadsheetId = null;
-                await verificarOuCriarPlanilha();
-                carregarDadosDaPlanilha();
+                document.getElementById('mensagemVazia').innerText = "Erro ao carregar do Google Sheets. Verifique o ID da planilha.";
             }
         }
 
