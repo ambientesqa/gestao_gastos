@@ -102,7 +102,6 @@
                 <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6 pb-4 border-b border-gray-100">
                     <h2 class="text-lg font-semibold text-gray-700">Meus Gastos e Dívidas</h2>
                     <div class="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                        <!-- Nova Caixa de Busca por Nome -->
                         <input type="text" id="filtroNome" oninput="renderizar()" placeholder="🔍 Buscar por nome..." 
                             class="px-3 py-1.5 border border-gray-300 rounded-lg text-xs bg-white focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto">
                         
@@ -302,22 +301,32 @@
             toggleParcelas();
         });
 
-        async function alternarParcela(dividaId, parcelaNum) {
+        async function alternarParcela(dividaId, parcelaNum, event) {
             const divida = dividas.find(d => d.id === dividaId);
-            if (divida) {
-                const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
-                if (parcela) {
-                    parcela.pago = !parcela.pago;
-                    await salvarNaPlanilha();
-                    renderizar();
-                }
+            if (!divida) return;
+
+            const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
+            if (!parcela) return;
+
+            const acao = parcela.pago ? "marcar como PENDENTE" : "marcar como PAGO";
+            const confirmacao = confirm(`Deseja realmente ${acao} a ${parcela.numero}ª parcela de "${divida.nome}"?`);
+
+            if (confirmacao) {
+                parcela.pago = !parcela.pago;
+                await salvarNaPlanilha();
+                renderizar();
+            } else {
+                // Reverte visualmente o checkbox caso o usuário cancele
+                event.target.checked = parcela.pago;
             }
         }
 
-        async function deletarDivida(id) {
-            dividas = dividas.filter(d => d.id !== id);
-            await salvarNaPlanilha();
-            renderizar();
+        async function deletarDivida(id, nome) {
+            if (confirm(`Tem certeza que deseja excluir permanentemente a dívida "${nome}"?`)) {
+                dividas = dividas.filter(d => d.id !== id);
+                await salvarNaPlanilha();
+                renderizar();
+            }
         }
 
         function limparFiltros() {
@@ -342,13 +351,11 @@
             const filtroStatus = document.getElementById('filtroStatus').value;
             const filtroMes = document.getElementById('filtroMes').value;
 
-            // Filtro por Mês (se preenchido)
             let dividasDoMes = dividas;
             if (filtroMes) {
                 dividasDoMes = dividas.filter(divida => divida.mesReferencia === filtroMes);
             }
 
-            // Filtro por Nome e Status
             let dividasFiltradas = dividasDoMes.filter(divida => {
                 const matchNome = divida.nome.toLowerCase().includes(filtroNome);
                 if (!matchNome) return false;
@@ -381,13 +388,16 @@
                 divida.parcelas.forEach(p => {
                     parcelasHtml += `
                         <label class="flex items-center space-x-2 text-xs bg-gray-50 hover:bg-gray-100 p-2 rounded border border-gray-100 cursor-pointer transition-colors">
-                            <input type="checkbox" ${p.pago ? 'checked' : ''} onchange="alternarParcela(${divida.id}, ${p.numero})" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
+                            <input type="checkbox" ${p.pago ? 'checked' : ''} onclick="alternarParcela(${divida.id}, ${p.numero}, event)" class="rounded text-indigo-600 focus:ring-indigo-500 w-4 h-4">
                             <span class="font-medium text-gray-700">${p.numero}ª Parcela</span>
                             <span class="text-gray-500">R$ ${p.valor.toFixed(2)}</span>
                             <span class="ml-auto font-semibold ${p.pago ? 'text-emerald-600' : 'text-amber-600'}">${p.pago ? 'Pago' : 'Pendente'}</span>
                         </label>
                     `;
                 });
+
+                // Escapa apóstrofos no nome para evitar erros ao passar no parâmetro da função delete
+                const nomeSeguro = divida.nome.replace(/'/g, "\\'");
 
                 itemHtml.innerHTML = `
                     <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-2 mb-3">
@@ -405,7 +415,7 @@
                                 ${divida.tipo === 'avista' ? 'Pagamento à vista' : `Parcelado em ${divida.parcelas.length}x`} • Total: <span class="font-medium text-gray-700">R$ ${divida.valorTotal.toFixed(2)}</span>
                             </p>
                         </div>
-                        <button onclick="deletarDivida(${divida.id})" class="text-xs text-red-400 hover:text-red-600 font-medium self-end md:self-auto">Excluir dívida</button>
+                        <button onclick="deletarDivida(${divida.id}, '${nomeSeguro}')" class="text-xs text-red-400 hover:text-red-600 font-medium self-end md:self-auto">Excluir dívida</button>
                     </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 mt-2 pt-2 border-t border-gray-100">
                         ${parcelasHtml}
