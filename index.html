@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Gestão de Gastos e Dívidas - Nuvem</title>
+    <title>Gestão de Gastos e Dívidas</title>
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <!-- Google Identity Services para autenticação -->
@@ -350,14 +350,24 @@
             const parcela = divida.parcelas.find(p => p.numero === parcelaNum);
             if (!parcela) return;
 
-            // Se for à vista ou se for desmarcar pagamento
-            if (divida.tipo === 'avista') {
-                parcela.pago = event.target.checked;
-            } else {
-                if (!parcela.pago) {
-                    // Vai marcar como PAGO: Pergunta a data de vencimento da próxima parcela pelo Calendário
+            // Se o usuário está tentando marcar como PAGO
+            if (!parcela.pago) {
+                if (divida.tipo === 'avista') {
+                    const confirmar = confirm(`Deseja confirmar o pagamento à vista de "${divida.nome}" no valor de R$ ${parcela.valor.toFixed(2)}?`);
+                    if (!confirmar) {
+                        event.target.checked = false;
+                        return;
+                    }
+                    parcela.pago = true;
+                } else {
+                    // Parcelado: Pergunta se quer marcar e pede a data da próxima parcela
+                    const confirmar = confirm(`Deseja confirmar o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
+                    if (!confirmar) {
+                        event.target.checked = false;
+                        return;
+                    }
+
                     const proximaParcela = divida.parcelas.find(p => p.numero === parcelaNum + 1 && !p.pago);
-                    
                     if (proximaParcela) {
                         const dataEscolhida = await abrirModalCalendario(
                             `Parcela ${parcelaNum} paga!`, 
@@ -368,14 +378,15 @@
                         }
                     }
                     parcela.pago = true;
+                }
+            } else {
+                // Se o usuário está tentando DESMARCAR (voltar para pendente)
+                const confirmacao = confirm(`Deseja realmente desfazer o pagamento da ${divida.tipo === 'avista' ? 'compra' : parcela.numero + 'ª parcela'} de "${divida.nome}"?`);
+                if (confirmacao) {
+                    parcela.pago = false;
                 } else {
-                    const confirmacao = confirm(`Deseja desfazer o pagamento da ${parcela.numero}ª parcela de "${divida.nome}"?`);
-                    if (confirmacao) {
-                        parcela.pago = false;
-                    } else {
-                        event.target.checked = true;
-                        return;
-                    }
+                    event.target.checked = true;
+                    return;
                 }
             }
 
@@ -401,7 +412,7 @@
         }
 
         async function deletarDivida(id, nome) {
-            if (confirm(`Tem certeza que deseja excluir permanentemente a dívida "${nome}"?`)) {
+            if (confirm(`Atenção! Tem certeza que deseja excluir permanentemente a dívida/gasto "${nome}"?`)) {
                 dividas = dividas.filter(d => d.id !== id);
                 await salvarNaPlanilha();
                 renderizar();
